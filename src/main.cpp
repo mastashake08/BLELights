@@ -36,12 +36,13 @@ bool photoFading = false;
 const int FADE_DURATION = 500; // Fade animation duration in ms
 
 // Display pins for Waveshare ESP32-C6-LCD-1.47
-#define TFT_MOSI 7
-#define TFT_SCLK 6
-#define TFT_CS   10
-#define TFT_DC   2
-#define TFT_RST  -1
-#define TFT_BL   15
+#define TFT_MOSI 6
+#define TFT_SCLK 7
+#define TFT_MISO 5
+#define TFT_CS   14
+#define TFT_DC   15
+#define TFT_RST  21
+#define TFT_BL   22
 
 // LVGL configuration
 #define SCREEN_WIDTH  172
@@ -102,7 +103,7 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
   uint32_t w = (area->x2 - area->x1 + 1);
   uint32_t h = (area->y2 - area->y1 + 1);
   
-  SPI.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE0));
+  SPI.beginTransaction(SPISettings(80000000, MSBFIRST, SPI_MODE0));
   digitalWrite(TFT_CS, LOW);
   
   // Set window
@@ -142,23 +143,25 @@ void initDisplay() {
   // Configure SPI pins
   pinMode(TFT_CS, OUTPUT);
   pinMode(TFT_DC, OUTPUT);
+  pinMode(TFT_RST, OUTPUT);
   pinMode(TFT_BL, OUTPUT);
   
   digitalWrite(TFT_CS, HIGH);
-  digitalWrite(TFT_BL, HIGH); // Turn on backlight
   
-  SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
+  // Initialize backlight with PWM
+  ledcAttach(TFT_BL, 1000, 10);  // 1kHz, 10-bit resolution
+  ledcWrite(TFT_BL, 512);         // 50% brightness
+  
+  SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI);
+  
+  // Hardware reset
+  digitalWrite(TFT_RST, LOW);
+  delay(50);
+  digitalWrite(TFT_RST, HIGH);
+  delay(50);
   
   // ST7789 initialization sequence
-  SPI.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE0));
-  digitalWrite(TFT_CS, LOW);
-  
-  // Software reset
-  digitalWrite(TFT_DC, LOW);
-  SPI.write(0x01);
-  digitalWrite(TFT_CS, HIGH);
-  delay(150);
-  
+  SPI.beginTransaction(SPISettings(80000000, MSBFIRST, SPI_MODE0));
   digitalWrite(TFT_CS, LOW);
   
   // Sleep out
@@ -166,17 +169,17 @@ void initDisplay() {
   SPI.write(0x11);
   delay(120);
   
-  // Color mode - 16bit
-  digitalWrite(TFT_DC, LOW);
-  SPI.write(0x3A);
-  digitalWrite(TFT_DC, HIGH);
-  SPI.write(0x55);
-  
-  // Memory access control (rotation)
+  // Memory access control (rotation) - horizontal mode
   digitalWrite(TFT_DC, LOW);
   SPI.write(0x36);
   digitalWrite(TFT_DC, HIGH);
-  SPI.write(0x00);
+  SPI.write(0x00);  // 0x00 for horizontal, 0x70 for vertical
+  
+  // Color mode - 16bit RGB565
+  digitalWrite(TFT_DC, LOW);
+  SPI.write(0x3A);
+  digitalWrite(TFT_DC, HIGH);
+  SPI.write(0x05);
   
   // Display on
   digitalWrite(TFT_DC, LOW);
@@ -369,19 +372,32 @@ void setup() {
   disp_drv.draw_buf = &draw_buf;
   lv_disp_drv_register(&disp_drv);
   
-  // Show loading message
+  // Clear screen with black background
+  lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), 0);
+  
+  // Show welcome message
   lv_obj_t* loadingLabel = lv_label_create(lv_scr_act());
-  lv_label_set_text(loadingLabel, "Initializing SD Card...");
-  lv_obj_align(loadingLabel, LV_ALIGN_CENTER, 0, 0);
-  if (PhotoViewer::initSD()) {
-    if (PhotoViewer::loadImageList()) {
-      lv_label_set_text(loadingLabel, "Loading photos...");
+  lv_label_set_text(loadingLabel, "BLELights\n\nESP32-C6\nPhoto Viewer\n\nInitializing...");
+  lv_obj_align(loadingLabel, LV_ALIGN_CPhotos found!\nStarting slideshow...");
       lv_timer_handler();
-      delay(500);
+      delay(1000);
       
-      // Display first photo and enter photo mode
+      // Clear screen and display first photo
+      lv_obj_del(loadingLabel);
+      
       if (PhotoViewer::showFirstImage(lv_scr_act())) {
         Serial.println("Photo slideshow mode activated!");
+        photoMode = true;
+        lastPhotoChange = millis();
+      }
+    } else {
+      lv_label_set_text(loadingLabel, "No photos found\nSwitching to\nLED Control Mode");
+      lv_timer_handler();
+      delay(2000);
+      lv_obj_del(loadingLabel);
+    }
+  } else {
+    lv_label_set_text(loadingLabel, "No SD card detected\nSwitching to\nLED Control Mode;
         photoMode = true;
         lastPhotoChange = millis();
         lv_obj_del(loadingLabel);
