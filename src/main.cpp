@@ -10,6 +10,7 @@
 // Pin definitions for Waveshare ESP32-C6-LCD-1.47
 #define RGB_LED_PIN 8      // RGB LED pin
 #define RGB_LED_COUNT 1    // Single RGB LED on board
+#define BUTTON_PIN 0       // Side button (BOOT button)
 
 // BLE UUIDs
 #define SERVICE_UUID        "12345678-1234-1234-1234-123456789012"
@@ -34,6 +35,12 @@ unsigned long lastPhotoChange = 0;
 const unsigned long PHOTO_CHANGE_INTERVAL = 3000; // Change photo every 3 seconds
 bool photoFading = false;
 const int FADE_DURATION = 500; // Fade animation duration in ms
+
+// Button variables
+bool lastButtonState = HIGH;
+bool buttonState = HIGH;
+unsigned long lastDebounceTime = 0;
+const unsigned long DEBOUNCE_DELAY = 50; // 50ms debounce delay
 
 // Display pins for Waveshare ESP32-C6-LCD-1.47
 #define TFT_MOSI 6
@@ -371,6 +378,60 @@ void generateRandomColor() {
   targetBlue = random(0, 256);
 }
 
+void togglePhotoMode() {
+  photoMode = !photoMode;
+  
+  Serial.print("Photo mode toggled: ");
+  Serial.println(photoMode ? "ON" : "OFF");
+  
+  if (photoMode) {
+    // Switching to photo mode - clear screen and show first photo
+    lv_obj_clean(lv_scr_act());
+    
+    if (PhotoViewer::hasImages() && PhotoViewer::showFirstImage(lv_scr_act())) {
+      Serial.println("Photo slideshow activated!");
+      lastPhotoChange = millis();
+    } else {
+      Serial.println("No photos available, reverting to LED mode");
+      photoMode = false;
+      createUI();
+      updateDisplay();
+    }
+  } else {
+    // Switching to LED control mode - clear screen and rebuild UI
+    lv_obj_clean(lv_scr_act());
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), 0);
+    
+    createUI();
+    updateDisplay();
+    Serial.println("LED Control Mode activated!");
+  }
+}
+
+void checkButton() {
+  int reading = digitalRead(BUTTON_PIN);
+  
+  // If button state changed, reset debounce timer
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis();
+  }
+  
+  // If enough time has passed since last state change
+  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY) {
+    // If button state has actually changed
+    if (reading != buttonState) {
+      buttonState = reading;
+      
+      // Button was pressed (LOW on ESP32-C6 boot button)
+      if (buttonState == LOW) {
+        togglePhotoMode();
+      }
+    }
+  }
+  
+  lastButtonState = reading;
+}
+
 void fadeToTarget() {
   // Smoothly interpolate current color toward target color
   if (abs(currentRed - targetRed) > 0.5) {
@@ -395,6 +456,9 @@ void fadeToTarget() {
 void setup() {
   Serial.begin(115200);
   Serial.println("Waveshare ESP32-C6-LCD-1.47 BLE LED Controller");
+  
+  // Initialize button with internal pull-up
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
   
   // Initialize RGB LED
   rgbLED.begin();
@@ -528,6 +592,9 @@ void setup() {
 
 void loop() {
   lv_timer_handler(); // Handle LVGL tasks
+  
+  // Check button state for photo mode toggle
+  checkButton();
   
   unsigned long currentTime = millis();
   
