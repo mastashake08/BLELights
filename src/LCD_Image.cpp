@@ -39,14 +39,14 @@ int32_t pngSeek(PNGFILE *page, int32_t position) {
 // you will need to adapt this function to suit.
 // Callback function to draw pixels to the display
 static uint16_t lineBuffer[MAX_IMAGE_WIDTH];
-void pngDraw(PNGDRAW *pDraw) {
+int pngDraw(PNGDRAW *pDraw) {
   png.getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
   uint32_t size = pDraw->iWidth;
   for (size_t i = 0; i < size; i++) {
     lineBuffer[i] = (((lineBuffer[i] >> 8) & 0xFF) | ((lineBuffer[i] << 8) & 0xFF00));        //  所有数据修正
   }
   LCD_addWindow(xpos, pDraw->y, xpos + pDraw->iWidth, ypos + pDraw->y + 1,lineBuffer);                   // x_end End index on x-axis (x_end not included)
-
+  return 1; // Return 1 to continue drawing
 }
 /////////////////////////////////////////////////////////////////
 

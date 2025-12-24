@@ -296,44 +296,20 @@ void updateDisplay() {
 
 // Animation callback for photo fade-in after fade-out completes
 void fadeInNewPhoto(lv_anim_t* a) {
-  // Load next photo
-  PhotoViewer::showNextImage(lv_scr_act());
-  
-  // Fade in the new photo
-  if (PhotoViewer::imageContainer) {
-    lv_obj_set_style_opa(PhotoViewer::imageContainer, LV_OPA_TRANSP, 0);
-    
-    lv_anim_t anim_in;
-    lv_anim_init(&anim_in);
-    lv_anim_set_var(&anim_in, PhotoViewer::imageContainer);
-    lv_anim_set_values(&anim_in, LV_OPA_TRANSP, LV_OPA_COVER);
-    lv_anim_set_time(&anim_in, FADE_DURATION);
-    lv_anim_set_exec_cb(&anim_in, (lv_anim_exec_xcb_t)lv_obj_set_style_opa);
-    lv_anim_set_path_cb(&anim_in, lv_anim_path_ease_in_out);
-    lv_anim_set_ready_cb(&anim_in, [](lv_anim_t* a) {
-      photoFading = false;
-    });
-    lv_anim_start(&anim_in);
-  } else {
-    photoFading = false;
-  }
+  // Load next photo (direct to display, no LVGL container)
+  PhotoViewer::showNextImage();
+  photoFading = false;
 }
 
 void fadePhotoTransition() {
-  if (photoFading || !PhotoViewer::imageContainer) return;
+  if (photoFading) return;
   
   photoFading = true;
   
-  // Fade out current photo
-  lv_anim_t anim_out;
-  lv_anim_init(&anim_out);
-  lv_anim_set_var(&anim_out, PhotoViewer::imageContainer);
-  lv_anim_set_values(&anim_out, LV_OPA_COVER, LV_OPA_TRANSP);
-  lv_anim_set_time(&anim_out, FADE_DURATION);
-  lv_anim_set_exec_cb(&anim_out, (lv_anim_exec_xcb_t)lv_obj_set_style_opa);
-  lv_anim_set_path_cb(&anim_out, lv_anim_path_ease_in_out);
-  lv_anim_set_ready_cb(&anim_out, fadeInNewPhoto);
-  lv_anim_start(&anim_out);
+  // Direct rendering - just show next image
+  PhotoViewer::showNextImage();
+  
+  photoFading = false;
 }
 
 void createUI() {
@@ -388,7 +364,7 @@ void togglePhotoMode() {
     // Switching to photo mode - clear screen and show first photo
     lv_obj_clean(lv_scr_act());
     
-    if (PhotoViewer::hasImages() && PhotoViewer::showFirstImage(lv_scr_act())) {
+    if (PhotoViewer::hasImages() && PhotoViewer::showFirstImage()) {
       Serial.println("Photo slideshow activated!");
       lastPhotoChange = millis();
     } else {
@@ -507,7 +483,7 @@ void setup() {
       // Clear screen and display first photo
       lv_obj_del(loadingLabel);
       
-      if (PhotoViewer::showFirstImage(lv_scr_act())) {
+      if (PhotoViewer::showFirstImage()) {
         Serial.println("Photo slideshow mode activated!");
         photoMode = true;
         lastPhotoChange = millis();
