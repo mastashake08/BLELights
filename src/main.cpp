@@ -44,6 +44,10 @@ const int FADE_DURATION = 500; // Fade animation duration in ms
 #define TFT_RST  21
 #define TFT_BL   22
 
+// Display offset for ST7789
+#define TFT_OFFSET_X 34
+#define TFT_OFFSET_Y 0
+
 // LVGL configuration
 #define SCREEN_WIDTH  172
 #define SCREEN_HEIGHT 320
@@ -106,32 +110,32 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
   SPI.beginTransaction(SPISettings(80000000, MSBFIRST, SPI_MODE0));
   digitalWrite(TFT_CS, LOW);
   
-  // Set window
+  // Set column address with offset
   digitalWrite(TFT_DC, LOW);
-  SPI.write(0x2A); // Column address set
+  SPI.write(0x2A);
   digitalWrite(TFT_DC, HIGH);
-  SPI.write16((area->x1 >> 8) & 0xFF);
-  SPI.write16(area->x1 & 0xFF);
-  SPI.write16((area->x2 >> 8) & 0xFF);
-  SPI.write16(area->x2 & 0xFF);
+  SPI.write((area->x1 + TFT_OFFSET_X) >> 8);
+  SPI.write((area->x1 + TFT_OFFSET_X) & 0xFF);
+  SPI.write((area->x2 + TFT_OFFSET_X) >> 8);
+  SPI.write((area->x2 + TFT_OFFSET_X) & 0xFF);
   
+  // Set row address with offset
   digitalWrite(TFT_DC, LOW);
-  SPI.write(0x2B); // Row address set
+  SPI.write(0x2B);
   digitalWrite(TFT_DC, HIGH);
-  SPI.write16((area->y1 >> 8) & 0xFF);
-  SPI.write16(area->y1 & 0xFF);
-  SPI.write16((area->y2 >> 8) & 0xFF);
-  SPI.write16(area->y2 & 0xFF);
+  SPI.write((area->y1 + TFT_OFFSET_Y) >> 8);
+  SPI.write((area->y1 + TFT_OFFSET_Y) & 0xFF);
+  SPI.write((area->y2 + TFT_OFFSET_Y) >> 8);
+  SPI.write((area->y2 + TFT_OFFSET_Y) & 0xFF);
   
+  // Write memory
   digitalWrite(TFT_DC, LOW);
-  SPI.write(0x2C); // Memory write
+  SPI.write(0x2C);
   digitalWrite(TFT_DC, HIGH);
   
-  uint32_t size = w * h;
-  uint16_t *p = (uint16_t *)color_p;
-  while (size--) {
-    SPI.write16(*p++);
-  }
+  // Send pixel data
+  uint32_t size = w * h * 2;
+  SPI.writeBytes((uint8_t*)color_p, size);
   
   digitalWrite(TFT_CS, HIGH);
   SPI.endTransaction();
@@ -167,13 +171,16 @@ void initDisplay() {
   // Sleep out
   digitalWrite(TFT_DC, LOW);
   SPI.write(0x11);
+  digitalWrite(TFT_CS, HIGH);
   delay(120);
+  
+  digitalWrite(TFT_CS, LOW);
   
   // Memory access control (rotation) - horizontal mode
   digitalWrite(TFT_DC, LOW);
   SPI.write(0x36);
   digitalWrite(TFT_DC, HIGH);
-  SPI.write(0x00);  // 0x00 for horizontal, 0x70 for vertical
+  SPI.write(0x00);  // 0x00 for horizontal
   
   // Color mode - 16bit RGB565
   digitalWrite(TFT_DC, LOW);
@@ -181,9 +188,48 @@ void initDisplay() {
   digitalWrite(TFT_DC, HIGH);
   SPI.write(0x05);
   
+  // Inversion on
+  digitalWrite(TFT_DC, LOW);
+  SPI.write(0x21);
+  
   // Display on
   digitalWrite(TFT_DC, LOW);
   SPI.write(0x29);
+  
+  digitalWrite(TFT_CS, HIGH);
+  SPI.endTransaction();
+  
+  delay(100);
+  
+  // Clear display to black
+  SPI.beginTransaction(SPISettings(80000000, MSBFIRST, SPI_MODE0));
+  digitalWrite(TFT_CS, LOW);
+  
+  // Set full screen window with offset
+  digitalWrite(TFT_DC, LOW);
+  SPI.write(0x2A);
+  digitalWrite(TFT_DC, HIGH);
+  SPI.write(TFT_OFFSET_X >> 8);
+  SPI.write(TFT_OFFSET_X & 0xFF);
+  SPI.write((171 + TFT_OFFSET_X) >> 8);
+  SPI.write((171 + TFT_OFFSET_X) & 0xFF);
+  
+  digitalWrite(TFT_DC, LOW);
+  SPI.write(0x2B);
+  digitalWrite(TFT_DC, HIGH);
+  SPI.write(TFT_OFFSET_Y >> 8);
+  SPI.write(TFT_OFFSET_Y & 0xFF);
+  SPI.write((319 + TFT_OFFSET_Y) >> 8);
+  SPI.write((319 + TFT_OFFSET_Y) & 0xFF);
+  
+  // Fill with black
+  digitalWrite(TFT_DC, LOW);
+  SPI.write(0x2C);
+  digitalWrite(TFT_DC, HIGH);
+  
+  for(uint32_t i = 0; i < (172 * 320); i++) {
+    SPI.write16(0x0000);
+  }
   
   digitalWrite(TFT_CS, HIGH);
   SPI.endTransaction();
@@ -381,12 +427,10 @@ void setup() {
   lv_obj_align(loadingLabel, LV_ALIGN_CENTER, 0, 0);
   lv_obj_set_style_text_color(loadingLabel, lv_color_white(), 0);
   lv_obj_set_style_text_align(loadingLabel, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_style_text_font(loadingLabel, &lv_font_montserrat_20, 0);
   lv_timer_handler();
   delay(2000);
   
   lv_label_set_text(loadingLabel, "Checking SD Card...");
-  lv_obj_set_style_text_font(loadingLabel, &lv_font_montserrat_16, 0);
   lv_timer_handler();
   delay(500);
   
