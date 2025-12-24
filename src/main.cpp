@@ -378,7 +378,21 @@ void setup() {
   // Show welcome message
   lv_obj_t* loadingLabel = lv_label_create(lv_scr_act());
   lv_label_set_text(loadingLabel, "BLELights\n\nESP32-C6\nPhoto Viewer\n\nInitializing...");
-  lv_obj_align(loadingLabel, LV_ALIGN_CPhotos found!\nStarting slideshow...");
+  lv_obj_align(loadingLabel, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_set_style_text_color(loadingLabel, lv_color_white(), 0);
+  lv_obj_set_style_text_align(loadingLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_text_font(loadingLabel, &lv_font_montserrat_20, 0);
+  lv_timer_handler();
+  delay(2000);
+  
+  lv_label_set_text(loadingLabel, "Checking SD Card...");
+  lv_obj_set_style_text_font(loadingLabel, &lv_font_montserrat_16, 0);
+  lv_timer_handler();
+  delay(500);
+  
+  if (PhotoViewer::initSD()) {
+    if (PhotoViewer::loadImageList()) {
+      lv_label_set_text(loadingLabel, "Photos found!\nStarting slideshow...");
       lv_timer_handler();
       delay(1000);
       
@@ -397,21 +411,7 @@ void setup() {
       lv_obj_del(loadingLabel);
     }
   } else {
-    lv_label_set_text(loadingLabel, "No SD card detected\nSwitching to\nLED Control Mode;
-        photoMode = true;
-        lastPhotoChange = millis();
-        lv_obj_del(loadingLabel);
-        
-        // Skip LED control UI setup - stay in photo mode
-      }
-    } else {
-      lv_label_set_text(loadingLabel, "No photos found on SD card");
-      lv_timer_handler();
-      delay(2000);
-      lv_obj_del(loadingLabel);
-    }
-  } else {
-    lv_label_set_text(loadingLabel, "SD card not detected");
+    lv_label_set_text(loadingLabel, "No SD card detected\nSwitching to\nLED Control Mode");
     lv_timer_handler();
     delay(2000);
     lv_obj_del(loadingLabel);
