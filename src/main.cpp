@@ -5,6 +5,7 @@
 #include <lvgl.h>
 #include <Adafruit_NeoPixel.h>
 #include <SPI.h>
+#include "PhotoViewer.h"
 
 // Pin definitions for Waveshare ESP32-C6-LCD-1.47
 #define RGB_LED_PIN 8      // RGB LED pin
@@ -26,6 +27,13 @@ bool bleColorReceived = false;
 unsigned long lastColorChange = 0;
 const unsigned long COLOR_CHANGE_INTERVAL = 3000; // Change target color every 3 seconds
 const float FADE_SPEED = 0.5; // Speed of color transition (lower = slower)
+
+// Photo viewer variables
+bool photoMode = false;
+unsigned long lastPhotoChange = 0;
+const unsigned long PHOTO_CHANGE_INTERVAL = 3000; // Change photo every 3 seconds
+bool photoFading = false;
+const int FADE_DURATION = 500; // Fade animation duration in ms
 
 // Display pins for Waveshare ESP32-C6-LCD-1.47
 #define TFT_MOSI 7
@@ -230,6 +238,48 @@ void updateDisplay() {
   }
 }
 
+// Animation callback for photo fade-in after fade-out completes
+void fadeInNewPhoto(lv_anim_t* a) {
+  // Load next photo
+  PhotoViewer::showNextImage(lv_scr_act());
+  
+  // Fade in the new photo
+  if (PhotoViewer::imageContainer) {
+    lv_obj_set_style_opa(PhotoViewer::imageContainer, LV_OPA_TRANSP, 0);
+    
+    lv_anim_t anim_in;
+    lv_anim_init(&anim_in);
+    lv_anim_set_var(&anim_in, PhotoViewer::imageContainer);
+    lv_anim_set_values(&anim_in, LV_OPA_TRANSP, LV_OPA_COVER);
+    lv_anim_set_time(&anim_in, FADE_DURATION);
+    lv_anim_set_exec_cb(&anim_in, (lv_anim_exec_xcb_t)lv_obj_set_style_opa);
+    lv_anim_set_path_cb(&anim_in, lv_anim_path_ease_in_out);
+    lv_anim_set_ready_cb(&anim_in, [](lv_anim_t* a) {
+      photoFading = false;
+    });
+    lv_anim_start(&anim_in);
+  } else {
+    photoFading = false;
+  }
+}
+
+void fadePhotoTransition() {
+  if (photoFading || !PhotoViewer::imageContainer) return;
+  
+  photoFading = true;
+  
+  // Fade out current photo
+  lv_anim_t anim_out;
+  lv_anim_init(&anim_out);
+  lv_anim_set_var(&anim_out, PhotoViewer::imageContainer);
+  lv_anim_set_values(&anim_out, LV_OPA_COVER, LV_OPA_TRANSP);
+  lv_anim_set_time(&anim_out, FADE_DURATION);
+  lv_anim_set_exec_cb(&anim_out, (lv_anim_exec_xcb_t)lv_obj_set_style_opa);
+  lv_anim_set_path_cb(&anim_out, lv_anim_path_ease_in_out);
+  lv_anim_set_ready_cb(&anim_out, fadeInNewPhoto);
+  lv_anim_start(&anim_out);
+}
+
 void createUI() {
   // Create color preview box
   colorBox = lv_obj_create(lv_scr_act());
@@ -319,19 +369,54 @@ void setup() {
   disp_drv.draw_buf = &draw_buf;
   lv_disp_drv_register(&disp_drv);
   
-  // Create UI
-  createUI();
+  // Show loading message
+  lv_obj_t* loadingLabel = lv_label_create(lv_scr_act());
+  lv_label_set_text(loadingLabel, "Initializing SD Card...");
+  lv_obj_align(loadingLabel, LV_ALIGN_CENTER, 0, 0);
+  if (PhotoViewer::initSD()) {
+    if (PhotoViewer::loadImageList()) {
+      lv_label_set_text(loadingLabel, "Loading photos...");
+      lv_timer_handler();
+      delay(500);
+      
+      // Display first photo and enter photo mode
+      if (PhotoViewer::showFirstImage(lv_scr_act())) {
+        Serial.println("Photo slideshow mode activated!");
+        photoMode = true;
+        lastPhotoChange = millis();
+        lv_obj_del(loadingLabel);
+        
+        // Skip LED control UI setup - stay in photo mode
+      }
+    } else {
+      lv_label_set_text(loadingLabel, "No photos found on SD card");
+      lv_timer_handler();
+      delay(2000);
+      lv_obj_del(loadingLabel);
+    }
+  } else {
+    lv_label_set_text(loadingLabel, "SD card not detected");
+    lv_timer_handler();
+    delay(2000);
+    lv_obj_del(loadingLabel);
+  }
   
-  // Display startup message
-  lv_obj_t* startupLabel = lv_label_create(lv_scr_act());
-  lv_label_set_text(startupLabel, "Starting BLE...");
-  lv_obj_align(startupLabel, LV_ALIGN_CENTER, 0, -50);
-  lv_obj_set_style_text_color(startupLabel, lv_color_white(), 0);
-  
-  lv_timer_handler();
-  delay(1000);
-  
-  lv_obj_del(startupLabel);
+  // Only create LED control UI if not in photo mode
+  if (!photoMode) {
+    // Create UI
+    createUI();
+    
+    // Display startup message
+    lv_obj_t* startupLabel = lv_label_create(lv_scr_act());
+    lv_label_set_text(startupLabel, "Starting BLE...");
+    lv_obj_align(startupLabel, LV_ALIGN_CENTER, 0, -50);
+    lv_obj_set_style_text_color(startupLabel, lv_color_white(), 0);
+    
+    lv_timer_handler();
+    delay(1000);
+    
+    lv_obj_del(startupLabel);
+  }
   
   // Initialize BLE
   BLEDevice::init("ESP32C6-LED");
@@ -372,7 +457,11 @@ void setup() {
   currentGreen = targetGreen;
   currentBlue = targetBlue;
   setLEDColor();
-  updateDisplay();
+  
+  // Only update display if not in photo mode
+  if (!photoMode) {
+    updateDisplay();
+  }
   
   lastColorChange = millis();
 }
@@ -382,6 +471,15 @@ void loop() {
   
   unsigned long currentTime = millis();
   
+  // Photo slideshow mode - cycle through photos with fade effect
+  if (photoMode) {
+    if (currentTime - lastPhotoChange >= PHOTO_CHANGE_INTERVAL && !photoFading) {
+      fadePhotoTransition();
+      lastPhotoChange = currentTime;
+    }
+  }
+  
+  // LED control - works in both photo mode and LED control mode
   // If not connected or no BLE color, generate new target colors periodically
   if (!bleColorReceived || !bleConnected) {
     if (currentTime - lastColorChange >= COLOR_CHANGE_INTERVAL) {
@@ -390,10 +488,14 @@ void loop() {
     }
   }
   
-  // Smoothly fade toward target color
+  // Smoothly fade toward target color and update LED
   fadeToTarget();
   setLEDColor();
-  updateDisplay();
+  
+  // Only update display UI if not in photo mode
+  if (!photoMode) {
+    updateDisplay();
+  }
   
   delay(20); // ~50 FPS for smooth fading
 }

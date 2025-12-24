@@ -68,6 +68,16 @@
 #define LV_USE_TEXTAREA   1
 #define LV_USE_TABLE      1
 
+/* Image settings */
+#define LV_IMG_CF_INDEXED   1
+#define LV_IMG_CF_ALPHA     1
+
+/* File system */
+#define LV_USE_FS_STDIO     0
+#define LV_USE_FS_POSIX     0
+#define LV_USE_FS_WIN32     0
+#define LV_USE_FS_FATFS     0
+
 /* Themes */
 #define LV_USE_THEME_DEFAULT 1
 #define LV_USE_THEME_BASIC   1
