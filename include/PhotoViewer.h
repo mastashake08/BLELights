@@ -13,16 +13,16 @@
 #include "SD_Card.h"
 #include "LCD_Image.h"
 
+// External references to global variables from LCD_Image module
+extern uint16_t Image_CNT;
+extern char SD_Image_Name[][100];
+
 // Photo viewer state
 namespace PhotoViewer {
     bool initialized = false;
     int currentImageIndex = 0;
     const char* imageDirectory = "/";
     const char* imageExtension = ".png";
-    
-    // External reference to image count from LCD_Image module
-    extern uint16_t Image_CNT;
-    extern char SD_Image_Name[][100];
 
     // Initialize SD card using SD_Card module
     bool initSD() {
@@ -50,8 +50,8 @@ namespace PhotoViewer {
         Serial.println("Scanning for PNG images on SD card...");
         Search_Image(imageDirectory, imageExtension);
         
-        Serial.printf("Found %d images\n", Image_CNT);
-        return Image_CNT > 0;
+        Serial.printf("Found %d images\n", ::Image_CNT);
+        return ::Image_CNT > 0;
     }
 
     // Display a PNG image using LCD_Image module
@@ -61,7 +61,7 @@ namespace PhotoViewer {
             return false;
         }
         
-        if (Image_CNT == 0) {
+        if (::Image_CNT == 0) {
             Serial.println("No images available");
             return false;
         }
@@ -74,32 +74,32 @@ namespace PhotoViewer {
 
     // Display next image in list
     bool showNextImage(lv_obj_t* parent = nullptr) {
-        if (Image_CNT == 0) {
+        if (::Image_CNT == 0) {
             Serial.println("No images to display");
             return false;
         }
         
-        currentImageIndex = (currentImageIndex + 1) % Image_CNT;
+        currentImageIndex = (currentImageIndex + 1) % ::Image_CNT;
         return displayImage(currentImageIndex, parent);
     }
 
     // Display previous image in list
     bool showPreviousImage(lv_obj_t* parent = nullptr) {
-        if (Image_CNT == 0) {
+        if (::Image_CNT == 0) {
             Serial.println("No images to display");
             return false;
         }
         
         currentImageIndex--;
         if (currentImageIndex < 0) {
-            currentImageIndex = Image_CNT - 1;
+            currentImageIndex = ::Image_CNT - 1;
         }
         return displayImage(currentImageIndex, parent);
     }
 
     // Display first image
     bool showFirstImage(lv_obj_t* parent = nullptr) {
-        if (Image_CNT == 0) {
+        if (::Image_CNT == 0) {
             Serial.println("No images to display");
             return false;
         }
@@ -110,7 +110,7 @@ namespace PhotoViewer {
 
     // Check if images are available
     bool hasImages() {
-        return Image_CNT > 0;
+        return ::Image_CNT > 0;
     }
 
     // Clean up resources

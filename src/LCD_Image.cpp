@@ -41,11 +41,32 @@ int32_t pngSeek(PNGFILE *page, int32_t position) {
 static uint16_t lineBuffer[MAX_IMAGE_WIDTH];
 int pngDraw(PNGDRAW *pDraw) {
   png.getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
+  
+  // Calculate how much of the line we can actually draw
   uint32_t size = pDraw->iWidth;
-  for (size_t i = 0; i < size; i++) {
-    lineBuffer[i] = (((lineBuffer[i] >> 8) & 0xFF) | ((lineBuffer[i] << 8) & 0xFF00));        //  所有数据修正
+  if (size > MAX_IMAGE_WIDTH) {
+    size = MAX_IMAGE_WIDTH; // Clip to buffer size
   }
-  LCD_addWindow(xpos, pDraw->y, xpos + pDraw->iWidth, ypos + pDraw->y + 1,lineBuffer);                   // x_end End index on x-axis (x_end not included)
+  
+  // Swap byte order for all pixels
+  for (size_t i = 0; i < size; i++) {
+    lineBuffer[i] = (((lineBuffer[i] >> 8) & 0xFF) | ((lineBuffer[i] << 8) & 0xFF00));
+  }
+  
+  // Only draw if within display bounds
+  int16_t displayY = ypos + pDraw->y;
+  if (displayY >= 0 && displayY < LCD_HEIGHT && xpos >= 0 && xpos < LCD_WIDTH) {
+    // Calculate visible width
+    int16_t visibleWidth = size;
+    if (xpos + size > LCD_WIDTH) {
+      visibleWidth = LCD_WIDTH - xpos;
+    }
+    
+    if (visibleWidth > 0) {
+      LCD_addWindow(xpos, displayY, xpos + visibleWidth, displayY + 1, lineBuffer);
+    }
+  }
+  
   return 1; // Return 1 to continue drawing
 }
 /////////////////////////////////////////////////////////////////
@@ -68,14 +89,26 @@ void Show_Image(const char * filePath)
   if (ret == PNG_SUCCESS) {                                                                          
     printf("image specs: (%d x %d), %d bpp, pixel type: %d\r\n", png.getWidth(), png.getHeight(), png.getBpp(), png.getPixelType()); 
     
-    uint32_t dt = millis();                                                                   
-    if (png.getWidth() > MAX_IMAGE_WIDTH) {                                                 
-      printf("Image too wide for allocated line buffer size!\r\n");                          
+    uint32_t dt = millis();
+    
+    // Center the image on the display
+    // If image is larger than display, it will be clipped
+    int16_t imageWidth = png.getWidth();
+    int16_t imageHeight = png.getHeight();
+    
+    xpos = (LCD_WIDTH - imageWidth) / 2;
+    ypos = (LCD_HEIGHT - imageHeight) / 2;
+    
+    // Ensure we don't have negative positions
+    if (xpos < 0) xpos = 0;
+    if (ypos < 0) ypos = 0;
+    
+    if (imageWidth > MAX_IMAGE_WIDTH) {                                                 
+      printf("Warning: Image width (%d) exceeds buffer size (%d), image will be clipped\r\n", imageWidth, MAX_IMAGE_WIDTH);                          
     }
-    else {                                                                                  
-      ret = png.decode(NULL, 0);                                                             
-      png.close();                                                                      
-    }                                                                        
+    
+    ret = png.decode(NULL, 0);                                                             
+    png.close();                                                                        
     printf("%d ms\r\n",millis()-dt);              
   }  
 }
